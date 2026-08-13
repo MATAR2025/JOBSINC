@@ -1,0 +1,5 @@
+import Icon from '@/components/ui/Icon';
+
+const items = [['briefcase', 'Publication d’offres', 'Créez des offres claires et donnez-leur la visibilité qu’elles méritent.'], ['users', 'Gestion des candidatures', 'Centralisez les profils et gardez une vue nette sur chaque étape.'], ['spark', 'Matching intelligent', 'Identifiez plus vite les profils qui correspondent à vos besoins.'], ['chart', 'Tableau de bord', 'Pilotez vos recrutements avec des informations simples et utiles.'] ] as const;
+
+export default function Solutions() { return <section id="solutions" className="section section-tint"><div className="container"><div className="section-heading center"><div className="eyebrow">Un espace pensé pour vos équipes</div><h2>Tout ce qu’il faut pour recruter efficacement</h2><p>Moins de dispersion, plus de décisions éclairées. JOBSINC accompagne votre processus de bout en bout.</p></div><div className="feature-grid">{items.map(([icon, title, description]) => <article className="feature" key={title}><div className="icon-box"><Icon name={icon} /></div><h3>{title}</h3><p>{description}</p></article>)}</div></div></section>; }
