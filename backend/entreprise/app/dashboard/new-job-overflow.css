@@ -1,0 +1,47 @@
+.new-job-layout,
+.new-job-main,
+.new-job-main > *,
+.job-form,
+.job-form > *,
+.job-form .dashboard-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.job-form .dashboard-panel {
+  overflow: hidden;
+}
+
+.job-form-section-title span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.job-form-grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.job-form-field input,
+.job-form-field select,
+.job-form-field textarea {
+  display: block;
+  min-width: 0;
+}
+
+@media (max-width: 1050px) {
+  .job-form-grid-four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  .job-form-section-title span {
+    text-align: left;
+  }
+
+  .job-form-grid-four {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

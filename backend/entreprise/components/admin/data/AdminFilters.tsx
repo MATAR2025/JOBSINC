@@ -1,0 +1,4 @@
+export type AdminFilter = { key: string; label: string; options?: Array<{ label: string; value: string }> };
+export default function AdminFilters({ filters, values, onChange }: { filters: AdminFilter[]; values: Record<string, string>; onChange: (key: string, value: string) => void }) {
+  return <div className="admin-filters">{filters.map((filter) => filter.options ? <label key={filter.key}><span>{filter.label}</span><select value={values[filter.key] || ''} onChange={(event) => onChange(filter.key, event.target.value)}><option value="">Tous</option>{filter.options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label> : <label key={filter.key}><span>{filter.label}</span><input value={values[filter.key] || ''} onChange={(event) => onChange(filter.key, event.target.value)} /></label>)}</div>;
+}
