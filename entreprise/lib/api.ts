@@ -43,26 +43,43 @@ export type CompanyMessage = {
   avatar?: string | null;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:5000/api';
 
 function endpoint(path: string) {
   if (!API_URL) return null;
   return `${API_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+/**
+ * Fonction générique pour effectuer des requêtes HTTP JSON avec envoi du Token JWT
+ */
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const url = endpoint(path);
   if (!url) throw new Error('API non configurée');
 
+  // Récupération automatique du token dans localStorage (côté client)
+  const token = typeof window !== 'undefined' 
+    ? (localStorage.getItem('jobsinc_token') || localStorage.getItem('token'))
+    : null;
+
+  // Construction des en-têtes HTTP
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options?.headers as Record<string, string>),
+  };
+
   const response = await fetch(url, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers,
     credentials: 'include',
   });
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    const error = new Error(body?.message || `Erreur serveur (${response.status})`) as Error & { status?: number };
+    const error = new Error(
+      body?.error || body?.message || `Erreur serveur (${response.status})`
+    ) as Error & { status?: number };
     error.status = response.status;
     throw error;
   }
@@ -70,41 +87,90 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   return response.json();
 }
 
+/**
+ * Fonction pour envoyer des formulaires multipart/form-data (fichiers, images, etc.)
+ */
+async function apiRequestForm<T>(path: string, body: FormData): Promise<T> {
+  const url = endpoint(path);
+  if (!url) throw new Error('API non configurée');
+
+  const token = typeof window !== 'undefined' 
+    ? (localStorage.getItem('jobsinc_token') || localStorage.getItem('token'))
+    : null;
+
+  const headers: Record<string, string> = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const response = await fetch(url, { 
+    method: 'POST', 
+    body, 
+    headers,
+    credentials: 'include' 
+  });
+
+  if (!response.ok) {
+    const responseBody = await response.json().catch(() => null);
+    throw new Error(responseBody?.error || responseBody?.message || `Erreur serveur (${response.status})`);
+  }
+
+  return response.json();
+}
+
+// ==========================================
+// API AUTHENTIFICATION & SESSION
+// ==========================================
+
+export async function authenticate(path: string, payload: Record<string, unknown>) {
+  return apiRequest<{ token?: string; user?: any; role?: string }>(path, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function authenticateWithFiles(path: string, fields: Record<string, string>, files: File[], fieldName = 'photos') {
+  const formData = new FormData();
+  Object.entries(fields).forEach(([key, value]) => formData.append(key, value));
+  files.forEach((file) => formData.append(fieldName, file, file.name));
+  return apiRequestForm<{ token?: string; user?: any; role?: string }>(path, formData);
+}
+
+export function isApiConfigured() {
+  return Boolean(API_URL);
+}
+
+// ==========================================
+// API TABLEAU DE BORD & RECRUTEMENT
+// ==========================================
+
 export async function getDashboardData() {
-  const dashboardEndpoint = process.env.NEXT_PUBLIC_DASHBOARD_ENDPOINT;
-  if (!dashboardEndpoint) return null;
+  const dashboardEndpoint = process.env.NEXT_PUBLIC_DASHBOARD_ENDPOINT || '/auth/me';
   return apiRequest<DashboardData>(dashboardEndpoint);
 }
 
 export async function getMatching() {
-  const matchingEndpoint = process.env.NEXT_PUBLIC_MATCHING_ENDPOINT;
-  if (!matchingEndpoint) return null;
-  return apiRequest<{ data?: DashboardData['matching']; results?: DashboardData['matching'] } | DashboardData['matching']>(matchingEndpoint);
+  const matchingEndpoint = process.env.NEXT_PUBLIC_MATCHING_ENDPOINT || '/matching';
+  const response = await apiRequest<{ data?: DashboardData['matching']; results?: DashboardData['matching'] } | DashboardData['matching']>(matchingEndpoint);
+  if (Array.isArray(response)) return response;
+  return response?.data || response?.results || [];
 }
 
 export async function getCompanyJobs() {
-  const jobsEndpoint = process.env.NEXT_PUBLIC_COMPANY_JOBS_ENDPOINT;
-  if (!jobsEndpoint) return null;
+  const jobsEndpoint = process.env.NEXT_PUBLIC_COMPANY_JOBS_ENDPOINT || '/jobs';
   const response = await apiRequest<Job[] | { data?: Job[]; results?: Job[] }>(jobsEndpoint);
   return Array.isArray(response) ? response : response.data || response.results || [];
 }
 
 export async function getCompanyApplications() {
-  const applicationsEndpoint = process.env.NEXT_PUBLIC_COMPANY_APPLICATIONS_ENDPOINT;
-  if (!applicationsEndpoint) return null;
+  const applicationsEndpoint = process.env.NEXT_PUBLIC_COMPANY_APPLICATIONS_ENDPOINT || '/applications';
   const response = await apiRequest<DashboardData['applications'] | { data?: DashboardData['applications']; results?: DashboardData['applications'] }>(applicationsEndpoint);
   return Array.isArray(response) ? response : response?.data || response?.results || [];
 }
 
 export async function getCompanyMessages() {
-  const messagesEndpoint = process.env.NEXT_PUBLIC_COMPANY_MESSAGES_ENDPOINT;
-  if (!messagesEndpoint) return null;
+  const messagesEndpoint = process.env.NEXT_PUBLIC_COMPANY_MESSAGES_ENDPOINT || '/messages';
   const response = await apiRequest<CompanyMessage[] | { data?: CompanyMessage[]; results?: CompanyMessage[] }>(messagesEndpoint);
   return Array.isArray(response) ? response : response?.data || response?.results || [];
-}
-
-export function isApiConfigured() {
-  return Boolean(API_URL);
 }
 
 export async function getCompanies() {
@@ -119,31 +185,8 @@ export async function getJobs() {
 
 export async function getStats(): Promise<Record<string, number>> {
   const response = await apiRequest<Record<string, number> | { data?: Record<string, number> }>(process.env.NEXT_PUBLIC_STATS_ENDPOINT || '/stats');
-  if (typeof response === 'object' && response !== null && 'data' in response && typeof response.data === 'object' && response.data !== null) return response.data as Record<string, number>;
-  return response as Record<string, number>;
-}
-
-export async function authenticate(path: string, payload: Record<string, unknown>) {
-  return apiRequest<{ token?: string; user?: unknown }>(path, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function authenticateWithFiles(path: string, fields: Record<string, string>, files: File[], fieldName = 'photos') {
-  const formData = new FormData();
-  Object.entries(fields).forEach(([key, value]) => formData.append(key, value));
-  files.forEach((file) => formData.append(fieldName, file, file.name));
-  return apiRequestForm<{ token?: string; user?: unknown }>(path, formData);
-}
-
-async function apiRequestForm<T>(path: string, body: FormData): Promise<T> {
-  const url = endpoint(path);
-  if (!url) throw new Error('API non configurée');
-  const response = await fetch(url, { method: 'POST', body, credentials: 'include' });
-  if (!response.ok) {
-    const responseBody = await response.json().catch(() => null);
-    throw new Error(responseBody?.message || `Erreur serveur (${response.status})`);
+  if (typeof response === 'object' && response !== null && 'data' in response && typeof response.data === 'object' && response.data !== null) {
+    return response.data as Record<string, number>;
   }
-  return response.json();
+  return response as Record<string, number>;
 }
