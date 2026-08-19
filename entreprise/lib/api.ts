@@ -1,149 +1,31 @@
-export type Company = {
-  id: string | number;
-  name: string;
-  sector?: string;
-  location?: string;
-  logo?: string | null;
-};
+export type CompanyImage = { id: string; url: string; isPrimary?: boolean; sortOrder?: number };
+export type Company = { id: string | number; name: string; sector?: string; location?: string; city?: string; country?: string; description?: string; images?: CompanyImage[]; logo?: string | null };
+export type Job = { id: string | number; title: string; company?: string; location?: string; contractType?: string; publishedAt?: string };
+export type DashboardData = { user?: { name?: string; firstName?: string; lastName?: string; role?: string; avatar?: string | null }; company?: { name?: string; sector?: string; size?: string; country?: string; city?: string; address?: string; website?: string; foundedYear?: string | number; description?: string; photos?: string[]; image?: string | null }; stats?: Record<string, number | string | null>; actions?: Array<{ id?: string | number; type?: string; label?: string; count?: number; href?: string }>; activity?: Array<{ label?: string; value?: number; date?: string }>; applications?: Array<{ id?: string | number; candidateName?: string; name?: string; jobTitle?: string; title?: string; date?: string; status?: string; avatar?: string | null }>; jobs?: Array<{ id?: string | number; title?: string; location?: string; contractType?: string; applicationsCount?: number; status?: string; publishedAt?: string }>; notifications?: Array<{ id?: string | number; label?: string; read?: boolean }>; matching?: Array<{ id?: string | number; candidateName?: string; name?: string; jobTitle?: string; title?: string; score?: number; matchScore?: number; location?: string; avatar?: string | null; skills?: string[] }> };
+export type CompanyMessage = { id?: string | number; conversationId?: string | number; participantName?: string; senderName?: string; name?: string; subject?: string; preview?: string; content?: string; date?: string; createdAt?: string; unread?: boolean; read?: boolean; avatar?: string | null };
 
-export type Job = {
-  id: string | number;
-  title: string;
-  company?: string;
-  location?: string;
-  contractType?: string;
-  publishedAt?: string;
-};
-
-export type DashboardData = {
-  user?: { name?: string; firstName?: string; lastName?: string; role?: string; avatar?: string | null };
-  company?: { name?: string; sector?: string; size?: string; country?: string; city?: string; address?: string; website?: string; foundedYear?: string | number; description?: string; photos?: string[]; image?: string | null };
-  stats?: Record<string, number | string | null>;
-  actions?: Array<{ id?: string | number; type?: string; label?: string; count?: number; href?: string }>;
-  activity?: Array<{ label?: string; value?: number; date?: string }>;
-  applications?: Array<{ id?: string | number; candidateName?: string; name?: string; jobTitle?: string; title?: string; date?: string; status?: string; avatar?: string | null }>;
-  jobs?: Array<{ id?: string | number; title?: string; location?: string; contractType?: string; applicationsCount?: number; status?: string; publishedAt?: string }>;
-  notifications?: Array<{ id?: string | number; label?: string; read?: boolean }>;
-  matching?: Array<{ id?: string | number; candidateName?: string; name?: string; jobTitle?: string; title?: string; score?: number; matchScore?: number; location?: string; avatar?: string | null; skills?: string[] }>;
-};
-
-export type CompanyMessage = {
-  id?: string | number;
-  conversationId?: string | number;
-  participantName?: string;
-  senderName?: string;
-  name?: string;
-  subject?: string;
-  preview?: string;
-  content?: string;
-  date?: string;
-  createdAt?: string;
-  unread?: boolean;
-  read?: boolean;
-  avatar?: string | null;
-};
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
-
-function endpoint(path: string) {
-  if (!API_URL) return null;
-  return `${API_URL}${path.startsWith('/') ? path : `/${path}`}`;
-}
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+const API_ORIGIN = new URL(API_URL).origin;
+const endpoint = (path: string) => `${API_URL}${path.startsWith('/') ? path : `/${path}`}`;
+export const assetUrl = (value?: string | null) => !value ? null : /^https?:\/\//i.test(value) ? value : new URL(value, API_ORIGIN).toString();
 
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = endpoint(path);
-  if (!url) throw new Error('API non configurée');
-
-  const response = await fetch(url, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    credentials: 'include',
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    const error = new Error(body?.message || `Erreur serveur (${response.status})`) as Error & { status?: number };
-    error.status = response.status;
-    throw error;
-  }
-
+  const token = typeof window === 'undefined' ? null : localStorage.getItem('jobsinc_token');
+  const response = await fetch(endpoint(path), { ...options, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options?.headers }, credentials: 'include', cache: 'no-store' });
+  if (!response.ok) { const body = await response.json().catch(() => null); const error = new Error(body?.message || body?.error || `Erreur serveur (${response.status})`) as Error & { status?: number }; error.status = response.status; throw error; }
   return response.json();
 }
 
-export async function getDashboardData() {
-  const dashboardEndpoint = process.env.NEXT_PUBLIC_DASHBOARD_ENDPOINT;
-  if (!dashboardEndpoint) return null;
-  return apiRequest<DashboardData>(dashboardEndpoint);
-}
-
-export async function getMatching() {
-  const matchingEndpoint = process.env.NEXT_PUBLIC_MATCHING_ENDPOINT;
-  if (!matchingEndpoint) return null;
-  return apiRequest<{ data?: DashboardData['matching']; results?: DashboardData['matching'] } | DashboardData['matching']>(matchingEndpoint);
-}
-
-export async function getCompanyJobs() {
-  const jobsEndpoint = process.env.NEXT_PUBLIC_COMPANY_JOBS_ENDPOINT;
-  if (!jobsEndpoint) return null;
-  const response = await apiRequest<Job[] | { data?: Job[]; results?: Job[] }>(jobsEndpoint);
-  return Array.isArray(response) ? response : response.data || response.results || [];
-}
-
-export async function getCompanyApplications() {
-  const applicationsEndpoint = process.env.NEXT_PUBLIC_COMPANY_APPLICATIONS_ENDPOINT;
-  if (!applicationsEndpoint) return null;
-  const response = await apiRequest<DashboardData['applications'] | { data?: DashboardData['applications']; results?: DashboardData['applications'] }>(applicationsEndpoint);
-  return Array.isArray(response) ? response : response?.data || response?.results || [];
-}
-
-export async function getCompanyMessages() {
-  const messagesEndpoint = process.env.NEXT_PUBLIC_COMPANY_MESSAGES_ENDPOINT;
-  if (!messagesEndpoint) return null;
-  const response = await apiRequest<CompanyMessage[] | { data?: CompanyMessage[]; results?: CompanyMessage[] }>(messagesEndpoint);
-  return Array.isArray(response) ? response : response?.data || response?.results || [];
-}
-
-export function isApiConfigured() {
-  return Boolean(API_URL);
-}
-
-export async function getCompanies() {
-  const response = await apiRequest<Company[] | { data?: Company[]; results?: Company[] }>(process.env.NEXT_PUBLIC_COMPANIES_ENDPOINT || '/companies');
-  return Array.isArray(response) ? response : response.data || response.results || [];
-}
-
-export async function getJobs() {
-  const response = await apiRequest<Job[] | { data?: Job[]; results?: Job[] }>(process.env.NEXT_PUBLIC_JOBS_ENDPOINT || '/jobs');
-  return Array.isArray(response) ? response : response.data || response.results || [];
-}
-
-export async function getStats(): Promise<Record<string, number>> {
-  const response = await apiRequest<Record<string, number> | { data?: Record<string, number> }>(process.env.NEXT_PUBLIC_STATS_ENDPOINT || '/stats');
-  if (typeof response === 'object' && response !== null && 'data' in response && typeof response.data === 'object' && response.data !== null) return response.data as Record<string, number>;
-  return response as Record<string, number>;
-}
-
-export async function authenticate(path: string, payload: Record<string, unknown>) {
-  return apiRequest<{ token?: string; user?: unknown }>(path, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function authenticateWithFiles(path: string, fields: Record<string, string>, files: File[], fieldName = 'photos') {
-  const formData = new FormData();
-  Object.entries(fields).forEach(([key, value]) => formData.append(key, value));
-  files.forEach((file) => formData.append(fieldName, file, file.name));
-  return apiRequestForm<{ token?: string; user?: unknown }>(path, formData);
-}
-
-async function apiRequestForm<T>(path: string, body: FormData): Promise<T> {
-  const url = endpoint(path);
-  if (!url) throw new Error('API non configurée');
-  const response = await fetch(url, { method: 'POST', body, credentials: 'include' });
-  if (!response.ok) {
-    const responseBody = await response.json().catch(() => null);
-    throw new Error(responseBody?.message || `Erreur serveur (${response.status})`);
-  }
-  return response.json();
-}
+function list<T>(response: T[] | { data?: T[]; results?: T[] }) { return Array.isArray(response) ? response : response.data || response.results || []; }
+function normalizeCompany(company: Company): Company { const images = (company.images || []).map((image) => ({ ...image, url: assetUrl(image.url) || image.url })); const primary = images.find((image) => image.isPrimary) || images[0]; return { ...company, images, logo: primary?.url || company.logo || null, location: company.location || [company.city, company.country].filter(Boolean).join(', ') || undefined }; }
+export const getDashboardData = () => apiRequest<DashboardData>(process.env.NEXT_PUBLIC_DASHBOARD_ENDPOINT || '/company/dashboard');
+export async function getMatching() { const path = process.env.NEXT_PUBLIC_MATCHING_ENDPOINT; return path ? apiRequest<{ data?: DashboardData['matching']; results?: DashboardData['matching'] } | DashboardData['matching']>(path) : null; }
+export async function getCompanyJobs() { return list(await apiRequest<any[] | { data?: any[]; results?: any[] }>(process.env.NEXT_PUBLIC_COMPANY_JOBS_ENDPOINT || '/company/jobs')).map((job: any) => ({ ...job, company: typeof job.company === 'object' && job.company !== null ? job.company.name : job.company })); }
+export async function getCompanyApplications() { return list(await apiRequest<NonNullable<DashboardData['applications']> | { data?: NonNullable<DashboardData['applications']>; results?: NonNullable<DashboardData['applications']> }>(process.env.NEXT_PUBLIC_COMPANY_APPLICATIONS_ENDPOINT || '/company/applications')); }
+export async function getCompanyMessages() { const path = process.env.NEXT_PUBLIC_COMPANY_MESSAGES_ENDPOINT; return path ? list(await apiRequest<CompanyMessage[] | { data?: CompanyMessage[]; results?: CompanyMessage[] }>(path)) : null; }
+export const isApiConfigured = () => Boolean(API_URL);
+export async function getCompanies() { return list(await apiRequest<Company[] | { data?: Company[]; results?: Company[] }>(process.env.NEXT_PUBLIC_COMPANIES_ENDPOINT || '/companies')).map(normalizeCompany); }
+export async function getJobs() { return list(await apiRequest<any[] | { data?: any[]; results?: any[] }>(process.env.NEXT_PUBLIC_JOBS_ENDPOINT || '/jobs')).map((job: any) => ({ ...job, company: typeof job.company === 'object' && job.company !== null ? job.company.name : job.company })); }
+export async function getStats(): Promise<Record<string, number>> { const response = await apiRequest<Record<string, number> | { data?: Record<string, number> }>(process.env.NEXT_PUBLIC_STATS_ENDPOINT || '/stats'); return typeof response === 'object' && response !== null && 'data' in response && response.data ? response.data as Record<string, number> : response as Record<string, number>; }
+export async function authenticate(path: string, payload: Record<string, unknown>) { return apiRequest<{ token?: string; user?: unknown }>(path, { method: 'POST', body: JSON.stringify(payload) }); }
+export async function authenticateWithFiles(path: string, fields: Record<string, string>, files: File[], fieldName = 'photos') { const formData = new FormData(); Object.entries(fields).forEach(([key, value]) => formData.append(key, value)); files.forEach((file) => formData.append(fieldName, file, file.name)); const response = await fetch(endpoint(path), { method: 'POST', body: formData, credentials: 'include', cache: 'no-store' }); if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.message || body?.error || `Erreur serveur (${response.status})`); } return response.json() as Promise<{ token?: string; user?: unknown }>; }

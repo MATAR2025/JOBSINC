@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String             @id @default(uuid())
+  email        String             @unique
+  passwordHash String
+  role         Role               @default(CANDIDATE)
+  candidate    CandidateProfile?
+  company      Company?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+model CandidateProfile {
+  id        String        @id @default(uuid())
+  user      User          @relation(fields: [userId], references: [id])
+  userId    String        @unique
+  firstName String
+  lastName  String
+  phone     String?
+  birthDate DateTime?
+  country   String?
+  city      String?
+  avatarUrl String?
+  cvUrl     String?
+  skills    String?       @db.LongText
+  applications Application[]
+  employments  Employment[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Company {
+  id          String        @id @default(uuid())
+  user        User          @relation(fields: [userId], references: [id])
+  userId      String        @unique
+  name        String
+  description String?       @db.Text
+  website     String?
+  sector      String?
+  size        String?
+  country     String?
+  city        String?
+  address     String?
+  foundedYear Int?
+  isApproved  Boolean       @default(false)
+  jobs        Job[]
+  images      CompanyImage[]
+  employments Employment[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model CompanyImage {
+  id        String   @id @default(uuid())
+  company   Company  @relation(fields: [companyId], references: [id])
+  companyId String
+  url       String
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, sortOrder])
+}
+
+model Job {
+  id               String        @id @default(uuid())
+  company          Company       @relation(fields: [companyId], references: [id])
+  companyId        String
+  title            String
+  description      String        @db.Text
+  location         String
+  jobType          JobType       @default(INTERNSHIP)
+  contractType     String?
+  department       String?
+  workMode         String?
+  experience       String?
+  salaryMin        Int?
+  salaryMax        Int?
+  currency         String?
+  deadline         DateTime?
+  responsibilities String?       @db.Text
+  skills           String?       @db.Text
+  isOpen           Boolean       @default(true)
+  applications     Application[]
+  employments      Employment[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model Application {
+  id                 String           @id @default(uuid())
+  job                Job              @relation(fields: [jobId], references: [id])
+  jobId              String
+  candidate          CandidateProfile @relation(fields: [candidateProfileId], references: [id])
+  candidateProfileId String
+  cvUrl              String?
+  coverLetter        String?            @db.Text
+  status             ApplicationStatus @default(RECEIVED)
+  employment         Employment?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([jobId, candidateProfileId])
+}
+
+model Employment {
+  id            String           @id @default(uuid())
+  application   Application      @relation(fields: [applicationId], references: [id])
+  applicationId String           @unique
+  candidate     CandidateProfile @relation(fields: [candidateId], references: [id])
+  candidateId   String
+  job           Job              @relation(fields: [jobId], references: [id])
+  jobId         String
+  company       Company          @relation(fields: [companyId], references: [id])
+  companyId     String
+  position      String
+  status        EmploymentStatus @default(ACTIVE)
+  startDate     DateTime         @default(now())
+  endDate       DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([candidateId])
+  @@index([companyId])
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Role {
+  CANDIDATE
+  EMPLOYEE
+  RECRUITER
+  ADMIN
+}
+
+enum ApplicationStatus {
+  RECEIVED
+  UNDER_REVIEW
+  INTERVIEW
+  ACCEPTED
+  REJECTED
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  INTERNSHIP
+  FREELANCE
+}

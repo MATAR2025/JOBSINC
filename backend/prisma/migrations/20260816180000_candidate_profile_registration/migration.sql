@@ -1,0 +1,4 @@
+ALTER TABLE `CandidateProfile`
+    ADD COLUMN `birthDate` DATETIME(3) NULL,
+    ADD COLUMN `country` VARCHAR(191) NULL,
+    ADD COLUMN `city` VARCHAR(191) NULL;
