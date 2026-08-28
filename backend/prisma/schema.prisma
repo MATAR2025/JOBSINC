@@ -12,10 +12,26 @@ model User {
   email        String             @unique
   passwordHash String
   role         Role               @default(CANDIDATE)
+  isBlocked    Boolean            @default(false)
   candidate    CandidateProfile?
   company      Company?
+  notifications Notification[]
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
+}
+
+model LoginLog {
+  id        String   @id @default(uuid())
+  email     String
+  userId    String?
+  role      Role?
+  success   Boolean  @default(false)
+  ip        String?
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([email])
 }
 
 model CandidateProfile {
@@ -30,6 +46,7 @@ model CandidateProfile {
   city      String?
   avatarUrl String?
   cvUrl     String?
+  coverLetterUrl String?
   skills    String?       @db.LongText
   applications Application[]
   employments  Employment[]
@@ -49,6 +66,7 @@ model Company {
   country     String?
   city        String?
   address     String?
+  mapsUrl     String?
   foundedYear Int?
   isApproved  Boolean       @default(false)
   jobs        Job[]
@@ -104,8 +122,10 @@ model Application {
   candidateProfileId String
   cvUrl              String?
   coverLetter        String?            @db.Text
+  coverLetterUrl     String?
   status             ApplicationStatus @default(RECEIVED)
   employment         Employment?
+  interview          Interview?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
@@ -158,4 +178,44 @@ enum JobType {
   PART_TIME
   INTERNSHIP
   FREELANCE
+}
+
+model Interview {
+  id              String          @id @default(uuid())
+  application     Application     @relation(fields: [applicationId], references: [id])
+  applicationId   String          @unique
+  note            String?         @db.Text
+  confirmedSlotId String?         @unique
+  confirmedSlot   InterviewSlot?  @relation("ConfirmedSlot", fields: [confirmedSlotId], references: [id])
+  confirmedAt     DateTime?
+  slots           InterviewSlot[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model InterviewSlot {
+  id          String    @id @default(uuid())
+  interview   Interview @relation(fields: [interviewId], references: [id])
+  interviewId String
+  startAt     DateTime
+  endAt       DateTime?
+  confirmedBy Interview? @relation("ConfirmedSlot")
+  createdAt   DateTime  @default(now())
+
+  @@index([interviewId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  type      String   @default("SYSTEM")
+  title     String
+  body      String?  @db.Text
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([createdAt])
 }

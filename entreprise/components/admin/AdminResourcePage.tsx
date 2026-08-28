@@ -6,9 +6,10 @@ import AdminFilters from './data/AdminFilters';
 import AdminPagination from './data/AdminPagination';
 import AdminPageHeader from './layout/AdminPageHeader';
 import AdminButton from './ui/AdminButton';
-import { getAdminResource } from '@/lib/admin-api';
+import { getAdminResource, rejectAdminApplication, deleteAdminApplication, setAdminUserBlocked, deleteAdminUser, setCompanyApproval } from '@/lib/admin-api';
+import Link from 'next/link';
 
-type Row = Record<string, unknown> & { id?: string | number };
+type Row = Record<string, unknown> & { id?: string | number; userId?: string | number; isBlocked?: boolean; isApproved?: boolean };
 type ResourceConfig = { title: string; description: string; endpoint: string; columns: Array<{ key: string; label: string }>; filters: Array<{ key: string; label: string; options?: Array<{ label: string; value: string }> }>; empty: string; action?: string };
 
 const configs: Record<string, ResourceConfig> = {
@@ -41,10 +42,52 @@ const normalize = (value: unknown) => value === undefined || value === null || v
 export default function AdminResourcePage({ section }: { section: string }) {
   const config = configs[section] || configs.activity;
   const [rows, setRows] = useState<Row[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(false); const [query, setQuery] = useState(''); const [filters, setFilters] = useState<Record<string, string>>({}); const [page, setPage] = useState(1); const pageSize = 10;
+  const [actionMsg, setActionMsg] = useState(''); const [confirmDelete, setConfirmDelete] = useState<Row | null>(null); const [busyId, setBusyId] = useState<string | number | null>(null);
   const load = useCallback(async () => { setLoading(true); setError(false); try { setRows((await getAdminResource(config.endpoint)) as Row[] || []); } catch { setError(true); } finally { setLoading(false); } }, [config.endpoint]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { const id = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(id); }, [load]);
   const filtered = useMemo(() => rows.filter((row) => Object.values(row).join(' ').toLowerCase().includes(query.toLowerCase()) && Object.entries(filters).every(([key, filter]) => !filter || String(row[key] || '').toLowerCase() === filter.toLowerCase())), [rows, query, filters]);
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize)); const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const columns: AdminColumn<Row>[] = config.columns.map((column) => ({ ...column, render: (row) => normalize(row[column.key]) }));
-  return <section className="admin-resource-page"><AdminPageHeader title={config.title} description={config.description} actions={<AdminButton variant="secondary" disabled={!process.env[`NEXT_PUBLIC_ADMIN_${config.endpoint.toUpperCase()}_ENDPOINT`]}>Exporter</AdminButton>} /><div className="admin-resource-toolbar"><label className="admin-users-search"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={`Rechercher dans ${config.title.toLowerCase()}...`} aria-label={`Rechercher dans ${config.title}`} /></label><AdminFilters filters={config.filters} values={filters} onChange={(key, value) => { setFilters((current) => ({ ...current, [key]: value })); setPage(1); }} /></div><AdminDataTable columns={columns} rows={visible} loading={loading} error={error} onRetry={load} emptyTitle={config.empty} /><div className="admin-resource-pagination"><AdminPagination page={page} totalPages={pages} totalItems={filtered.length} onPageChange={setPage} /></div></section>;
+  const isApplications = config.endpoint === 'applications';
+  const isCompanies = config.endpoint === 'companies';
+  const isUserRows = ['candidates', 'employees', 'administrators'].includes(config.endpoint);
+  const isNotifications = config.endpoint === 'notifications';
+  const smartRender = (key: string, row: Row) => {
+    if (isNotifications && key === 'read') {
+      return row.read ? <span className="admin-status-badge">Lue</span> : <span className="admin-status-badge admin-notif-unread">Non lue</span>;
+    }
+    if (isNotifications && key === 'category') {
+      return <span className="admin-notif-category">{normalize(row.category)}</span>;
+    }
+    return normalize(row[key]);
+  };
+  const sectionLabel = isCompanies ? 'l’entreprise' : 'l’utilisateur';
+  const userDisplayName = (row: Row) => String(row.name || row.email || '');
+  const toggleUserBlock = async (row: Row) => {
+    const targetId = row.userId !== undefined ? row.userId : row.id;
+    if (targetId === undefined) return;
+    setActionMsg(''); setBusyId(targetId);
+    try { const block = !(row.isBlocked ?? false); await setAdminUserBlocked(String(targetId), block); setRows((current) => current.map((item) => item.id === row.id ? { ...item, isBlocked: block, status: block ? 'suspended' : 'active' } : item)); setActionMsg(block ? 'Compte suspendu.' : 'Compte réactivé.'); } catch (err) { setActionMsg(err instanceof Error ? err.message : 'Action impossible.'); } finally { setBusyId(null); }
+  };
+  const run = async (id: string | number | undefined, fn: (value: string) => Promise<unknown>, success: string) => {
+    if (id === undefined) return;
+    setActionMsg(''); setBusyId(id);
+    try { await fn(String(id)); setRows((current) => current.filter((row) => row.id !== id)); setConfirmDelete(null); setActionMsg(success); } catch (err) { setActionMsg(err instanceof Error ? err.message : 'Action impossible.'); setConfirmDelete(null); } finally { setBusyId(null); }
+  };
+  const toggleCompanyBlock = async (row: Row) => {
+    if (row.userId === undefined) return;
+    setActionMsg(''); setBusyId(row.userId);
+    try { const block = !(row.isBlocked ?? false); await setAdminUserBlocked(String(row.userId), block); setRows((current) => current.map((item) => item.id === row.id ? { ...item, isBlocked: block, status: block ? 'suspended' : 'active' } : item)); setActionMsg(block ? 'Entreprise suspendue.' : 'Entreprise réactivée.'); } catch (err) { setActionMsg(err instanceof Error ? err.message : 'Action impossible.'); } finally { setBusyId(null); }
+  };
+  const toggleCompanyApproval = async (row: Row, approved: boolean) => {
+    if (row.id === undefined) return;
+    setActionMsg(''); setBusyId(row.id);
+    try { await setCompanyApproval(String(row.id), approved); setRows((current) => current.map((item) => item.id === row.id ? { ...item, isApproved: approved, status: approved ? 'active' : 'pending' } : item)); setActionMsg(approved ? 'Entreprise approuvée.' : 'Entreprise refusée.'); } catch (err) { setActionMsg(err instanceof Error ? err.message : 'Action impossible.'); } finally { setBusyId(null); }
+  };
+  const columns: AdminColumn<Row>[] = [
+    ...config.columns.map((column) => ({ ...column, render: (row: Row) => smartRender(column.key, row) })),
+    ...(isApplications ? [{ key: '__actions', label: 'Actions', render: (row: Row) => <div className="admin-row-actions" onClick={(event) => event.stopPropagation()} role="group" aria-label={`Actions sur la candidature de ${row.jobTitle || row.candidateName || ''}`}><Link className="admin-button admin-button-secondary admin-button-sm" href={`/admin/users/${row.userId}`}>Voir le candidat</Link><button className="admin-button admin-button-secondary admin-button-sm" disabled={busyId === row.id} onClick={() => run(row.id, rejectAdminApplication, 'Candidature bloquée (rejetée).')}>Bloquer</button><button className="admin-button admin-button-danger admin-button-sm" disabled={busyId === row.id} onClick={() => setConfirmDelete(row)}>Supprimer</button></div> }] : []),
+    ...(isNotifications ? [{ key: '__open', label: '', render: (row: Row) => row.link ? <Link className="admin-button admin-button-secondary admin-button-sm" href={String(row.link)}>Ouvrir</Link> : <span className="admin-muted">—</span> }] : []),
+    ...(isCompanies || isUserRows ? [{ key: '__detail', label: '', render: (row: Row) => <div className="admin-row-actions" onClick={(event) => event.stopPropagation()} role="group" aria-label={`Actions sur ${sectionLabel} ${userDisplayName(row)}`}>{isCompanies && row.isApproved === false ? <button className="admin-button admin-button-primary admin-button-sm" disabled={busyId === row.id} onClick={() => toggleCompanyApproval(row, true)}>Approuver</button> : null}<Link className="admin-button admin-button-secondary admin-button-sm" href={`/admin/users/${row.userId ?? row.id}`}>Voir le profil</Link><button className="admin-button admin-button-secondary admin-button-sm" disabled={busyId === (row.userId ?? row.id)} onClick={() => (isCompanies ? toggleCompanyBlock(row) : toggleUserBlock(row))}>{row.isBlocked ? 'Réactiver' : 'Bloquer'}</button><button className="admin-button admin-button-danger admin-button-sm" disabled={busyId === (row.userId ?? row.id)} onClick={() => setConfirmDelete(row)}>Supprimer</button></div> }] : []),
+  ];
+  return <section className="admin-resource-page"><AdminPageHeader title={config.title} description={config.description} actions={<AdminButton variant="secondary" disabled={!process.env[`NEXT_PUBLIC_ADMIN_${config.endpoint.toUpperCase()}_ENDPOINT`]}>Exporter</AdminButton>} />{actionMsg ? <div className="admin-alert admin-alert-success" role="status"><strong>{actionMsg}</strong></div> : null}<div className="admin-resource-toolbar"><label className="admin-users-search"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={`Rechercher dans ${config.title.toLowerCase()}...`} aria-label={`Rechercher dans ${config.title}`} /></label><AdminFilters filters={config.filters} values={filters} onChange={(key, value) => { setFilters((current) => ({ ...current, [key]: value })); setPage(1); }} /></div><AdminDataTable columns={columns} rows={visible} loading={loading} error={error} onRetry={load} emptyTitle={config.empty} /><div className="admin-resource-pagination"><AdminPagination page={page} totalPages={pages} totalItems={filtered.length} onPageChange={setPage} /></div>{confirmDelete ? <div className="admin-modal-overlay" onClick={() => setConfirmDelete(null)}><div className="admin-modal" onClick={(event) => event.stopPropagation()}><p className="admin-kicker">Action irréversible</p><h3>{isApplications ? 'Supprimer cette candidature ?' : (isCompanies || isUserRows) ? 'Supprimer ce compte ?' : 'Supprimer ?'}</h3>{isCompanies ? <p>L’entreprise <strong>{String(confirmDelete.name || '')}</strong> et le compte <strong>{String(confirmDelete.email || '')}</strong> seront définitivement supprimés avec leurs offres et données associées. Cette action est irréversible.</p> : isUserRows ? <p>Le compte <strong>{String(confirmDelete.email || confirmDelete.name || '')}</strong> sera définitivement supprimé avec ses données associées. Cette action est irréversible.</p> : <p>La candidature de <strong>{String(confirmDelete.candidateName || '')}</strong> pour <strong>{String(confirmDelete.jobTitle || '')}</strong> sera définitivement supprimée, entretien et recrutement associés inclus.</p>}<div className="admin-modal-actions"><button className="admin-button admin-button-secondary" onClick={() => setConfirmDelete(null)}>Annuler</button><button className="admin-button admin-button-danger" onClick={() => (isCompanies || isUserRows) ? run(confirmDelete.userId !== undefined ? String(confirmDelete.userId) : undefined, deleteAdminUser, isCompanies ? 'Entreprise supprimée.' : 'Utilisateur supprimé.') : run(confirmDelete.id, deleteAdminApplication, 'Candidature supprimée.')}>Supprimer définitivement</button></div></div></div> : null}</section>;
 }

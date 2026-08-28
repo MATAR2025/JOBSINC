@@ -8,6 +8,8 @@ const publicCompanyRoutes = require('./src/routes/publicCompanyRoutes');
 const jobRoutes = require('./src/routes/jobRoutes');
 const applicationRoutes = require('./src/routes/applicationRoutes');
 const candidateRoutes = require('./src/routes/candidateRoutes');
+const notificationRoutes = require('./src/routes/notificationRoutes');
+const adminRoutes = require('./src/routes/adminRoutes');
 const path = require('path');
 
 const app = express();
@@ -16,7 +18,7 @@ const app = express();
 app.use(cors({
   origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -30,6 +32,8 @@ app.use('/api/companies', publicCompanyRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/candidate', candidateRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use((error, req, res, next) => {
   if (error?.status === 400) return res.status(400).json({ error: error.message });

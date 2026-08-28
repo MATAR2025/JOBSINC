@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const prisma = require('../config/prisma');
 
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -20,6 +21,11 @@ module.exports = (req, res, next) => {
       userId: decoded.userId || decoded.id,
       role: decoded.role
     };
+
+    // Vérifier que le compte existe et n'est pas bloqué
+    const user = await prisma.user.findUnique({ where: { id: req.user.userId }, select: { isBlocked: true } });
+    if (!user) return res.status(401).json({ error: 'Votre session n\'est plus valide.' });
+    if (user.isBlocked) return res.status(403).json({ error: 'Votre compte a été suspendu par l\'administrateur.' });
 
     next();
   } catch (error) {

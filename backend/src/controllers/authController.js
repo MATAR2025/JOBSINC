@@ -44,6 +44,23 @@ function createToken(user) {
   );
 }
 
+async function recordLogin(req, email, userId, role, success) {
+  try {
+    await prisma.loginLog.create({
+      data: {
+        email,
+        userId: userId || null,
+        role: role || null,
+        success,
+        ip: String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').slice(0, 45),
+        userAgent: String(req.headers['user-agent'] || '').slice(0, 250),
+      },
+    });
+  } catch (cause) {
+    console.error('Erreur journal de connexion:', cause.message);
+  }
+}
+
 exports.registerCandidate = async (req, res) => {
   try {
     if (!process.env.JWT_SECRET) return error(res, 500, 'Configuration de sécurité incomplète.');
@@ -59,7 +76,8 @@ exports.registerCandidate = async (req, res) => {
 
     if (!emailPattern.test(email)) return error(res, 400, 'Veuillez saisir une adresse email valide.');
     if (password.length < 8) return error(res, 400, 'Le mot de passe doit contenir au moins 8 caractères.');
-    if (firstName.length < 2 || lastName.length < 2) return error(res, 400, 'Le prénom et le nom doivent contenir au moins 2 caractères.');
+    if (firstName.length < 2) return error(res, 400, 'Le prénom doit contenir au moins 2 caractères.');
+    if (lastName.length < 2) return error(res, 400, 'Le nom doit contenir au moins 2 caractères.');
     if (!phone || phone.replace(/\D/g, '').length < 8) return error(res, 400, 'Veuillez saisir un numéro de téléphone valide.');
     if (!country || !city) return error(res, 400, 'Le pays et la ville sont obligatoires.');
     if (!birthDate || Number.isNaN(birthDate.getTime())) return error(res, 400, 'Veuillez saisir une date de naissance valide.');
@@ -101,12 +119,21 @@ exports.loginCandidate = async (req, res) => {
     if (!email || !password) return error(res, 400, 'L’adresse email et le mot de passe sont obligatoires.');
 
     const user = await prisma.user.findUnique({ where: { email }, include: { candidate: true } });
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) return error(res, 401, 'Identifiants invalides.');
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      await recordLogin(req, email, null, null, false);
+      return error(res, 401, 'Identifiants invalides.');
+    }
 
-    if (user.role !== 'CANDIDATE') {
+    if (!user.candidate && user.role !== 'CANDIDATE') {
       return error(res, 403, 'Accès réservé aux candidats.');
     }
 
+    if (user.blocked || user.isBlocked) {
+      await recordLogin(req, email, user.id, user.role, false);
+      return error(res, 403, 'Ce compte a été suspendu par l’administrateur.');
+    }
+
+    await recordLogin(req, email, user.id, user.role, true);
     return res.json({ message: 'Connexion réussie.', token: createToken(user), user: userDto(user) });
   } catch (cause) {
     console.error('Erreur connexion:', cause);
@@ -169,16 +196,61 @@ exports.loginCompany = async (req, res) => {
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     if (!email || !password) return error(res, 400, 'L’adresse email et le mot de passe sont obligatoires.');
 
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) return error(res, 401, 'Identifiants invalides.');
+    const user = await prisma.user.findUnique({ where: { email }, include: { company: { select: { isApproved: true } } } });
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      await recordLogin(req, email, null, null, false);
+      return error(res, 401, 'Identifiants invalides.');
+    }
 
     if (user.role !== 'RECRUITER' && user.role !== 'EMPLOYER' && user.role !== 'ADMIN') {
       return error(res, 403, 'Accès réservé aux entreprises.');
     }
 
+    if (user.blocked || user.isBlocked) {
+      await recordLogin(req, email, user.id, user.role, false);
+      return error(res, 403, 'Ce compte a été suspendu par l’administrateur.');
+    }
+
+    if (user.role !== 'ADMIN' && user.company && user.company.isApproved === false) {
+      await recordLogin(req, email, user.id, user.role, false);
+      return error(res, 403, 'Votre compte entreprise est en attente de validation par un administrateur.');
+    }
+
+    await recordLogin(req, email, user.id, user.role, true);
     return res.json({ message: 'Connexion réussie.', token: createToken(user), user: { id: user.id, email: user.email, role: user.role } });
   } catch (cause) {
     console.error('Erreur connexion entreprise:', cause);
+    return error(res, 500, 'Impossible de vous connecter pour le moment.');
+  }
+};
+
+exports.loginAdmin = async (req, res) => {
+  try {
+    if (!process.env.JWT_SECRET) return error(res, 500, 'Configuration de sécurité incomplète.');
+    const email = clean(req.body.email).toLowerCase();
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    if (!email || !password) return error(res, 400, 'L’adresse email et le mot de passe sont obligatoires.');
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      await recordLogin(req, email, null, null, false);
+      return error(res, 401, 'Identifiants invalides.');
+    }
+
+    if (user.role !== 'ADMIN') {
+      await recordLogin(req, email, user.id, user.role, false);
+      return error(res, 403, 'Ce compte ne possède pas les permissions administrateur.');
+    }
+
+    if (user.blocked || user.isBlocked) {
+      await recordLogin(req, email, user.id, user.role, false);
+      return error(res, 403, 'Ce compte a été suspendu par l’administrateur.');
+    }
+
+    await recordLogin(req, email, user.id, user.role, true);
+    return res.json({ message: 'Connexion réussie.', token: createToken(user), user: { id: user.id, email: user.email, role: user.role } });
+  } catch (cause) {
+    console.error('Erreur connexion admin:', cause);
     return error(res, 500, 'Impossible de vous connecter pour le moment.');
   }
 };

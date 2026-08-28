@@ -1,8 +1,12 @@
 const router = require('express').Router();
 const auth = require('../middlewares/authMiddleware');
 const controller = require('../controllers/applicationController');
+const interviewController = require('../controllers/interviewController');
 router.use(auth);
 router.get('/me', controller.mine);
+router.get('/:id', controller.detail);
 router.post('/jobs/:jobId', controller.create);
 router.patch('/:id/status', controller.updateStatus);
+router.post('/:id/interview', interviewController.propose);
+router.post('/:id/interview/confirm', interviewController.confirmSlot);
 module.exports = router;

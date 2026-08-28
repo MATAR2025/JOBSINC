@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import logo from './logo.png';
 
-const navItems = [['Solutions', '#solutions'], ['Entreprises', '#companies'], ['Comment ça marche', '#how'], ['À propos', '#about']];
+const navItems = [['Solutions', '#solutions'], ['Entreprises', '#companies'], ['Comment ça marche', '#how'], ['À propos', '#about'], ['Offres d’emploi', '/offres']];
 
 export default function Header() {
   const [open, setOpen] = useState(false);
@@ -28,6 +28,7 @@ export default function Header() {
         {navItems.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
       </nav>
       <div className="header-actions">
+        <Link href="/admin/login" className="login-link admin-login-link">Connexion admin</Link>
         <Link href="/login" className="login-link">Se connecter</Link>
         <Link href="/register" className="button button-primary button-small">Créer un compte</Link>
       </div>
@@ -37,7 +38,7 @@ export default function Header() {
       <nav aria-label="Navigation mobile">
         <Link href="#home" onClick={() => setOpen(false)}>Accueil</Link>
         {navItems.map(([label, href]) => <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>)}
-        <div className="mobile-actions"><Link href="/login" onClick={() => setOpen(false)}>Se connecter</Link><Link href="/register" className="button button-primary" onClick={() => setOpen(false)}>Créer un compte entreprise</Link></div>
+        <div className="mobile-actions"><Link href="/admin/login" onClick={() => setOpen(false)}>Connexion admin</Link><Link href="/login" onClick={() => setOpen(false)}>Se connecter</Link><Link href="/register" className="button button-primary" onClick={() => setOpen(false)}>Créer un compte entreprise</Link></div>
       </nav>
     </div>
   </header>;

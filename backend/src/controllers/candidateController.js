@@ -21,6 +21,7 @@ exports.getProfile = async (req, res) => {
       city: candidate.city,
       avatarUrl: candidate.avatarUrl,
       cvUrl: candidate.cvUrl,
+      coverLetterUrl: candidate.coverLetterUrl,
       skills: candidate.skills,
       email: candidate.user.email,
     });
@@ -64,6 +65,7 @@ exports.updateProfile = async (req, res) => {
       city: updated.city,
       avatarUrl: updated.avatarUrl,
       cvUrl: updated.cvUrl,
+      coverLetterUrl: updated.coverLetterUrl,
       skills: updated.skills,
       email: updated.user.email,
     });
@@ -98,6 +100,34 @@ exports.uploadCv = async (req, res) => {
   } catch (error) {
     console.error('Erreur uploadCv:', error);
     res.status(500).json({ error: 'Impossible d\'uploader le CV.' });
+  }
+};
+
+exports.uploadCoverLetter = async (req, res) => {
+  try {
+    if (!req.coverLetterFile) {
+      return res.status(400).json({ error: 'Aucun fichier lettre fourni.' });
+    }
+
+    const candidate = await prisma.candidateProfile.findUnique({
+      where: { userId: req.user.userId },
+    });
+    if (!candidate) {
+      return res.status(404).json({ error: 'Profil candidat introuvable.' });
+    }
+
+    const updated = await prisma.candidateProfile.update({
+      where: { id: candidate.id },
+      data: { coverLetterUrl: req.coverLetterFile.url },
+    });
+
+    res.json({
+      message: 'Lettre de motivation uploadée avec succès.',
+      coverLetterUrl: updated.coverLetterUrl,
+    });
+  } catch (error) {
+    console.error('Erreur uploadCoverLetter:', error);
+    res.status(500).json({ error: 'Impossible d\'uploader la lettre de motivation.' });
   }
 };
 

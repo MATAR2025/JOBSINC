@@ -20,6 +20,7 @@ function companyDto(company) {
     id: company.id, name: company.name, description: company.description,
     website: company.website, sector: company.sector, size: company.size,
     country: company.country, city: company.city, address: company.address,
+    mapsUrl: company.mapsUrl,
     foundedYear: company.foundedYear,
     images: (company.images || []).map((image) => ({ id: image.id, url: image.url, isPrimary: image.isPrimary, sortOrder: image.sortOrder })),
   };
@@ -63,9 +64,10 @@ exports.dashboard = async (req, res) => {
     if (!isRecruiter(req, res)) return;
     const company = await getCompany(req.user.userId);
     if (!company) return res.status(404).json({ error: 'Profil entreprise introuvable.' });
-    const [jobs, applications] = await Promise.all([
+    const [jobs, applications, notifications] = await Promise.all([
       prisma.job.findMany({ where: { companyId: company.id }, include: jobInclude, orderBy: { createdAt: 'desc' }, take: 8 }),
       prisma.application.findMany({ where: { job: { companyId: company.id } }, include: { job: true, candidate: true }, orderBy: { createdAt: 'desc' }, take: 8 }),
+      prisma.notification.findMany({ where: { userId: req.user.userId }, orderBy: { createdAt: 'desc' }, take: 20 }),
     ]);
     const byStatus = (status) => applications.filter((item) => item.status === status).length;
     res.json({
@@ -74,6 +76,7 @@ exports.dashboard = async (req, res) => {
       actions: applications.filter((item) => item.status === 'RECEIVED').slice(0, 4).map((item) => ({ id: item.id, label: `Nouvelle candidature pour ${item.job.title}`, href: '/dashboard/applications', count: 1 })),
       activity: jobs.slice(0, 7).reverse().map((job) => ({ label: new Date(job.createdAt).toLocaleDateString('fr-FR'), value: job._count.applications, date: job.createdAt })),
       jobs: jobs.map(jobDto), applications: applications.map(applicationDto),
+      notifications: notifications.map((item) => ({ id: item.id, label: item.title, body: item.body, link: item.link, read: item.read, createdAt: item.createdAt })),
     });
   } catch (error) { res.status(500).json({ error: 'Impossible de charger le tableau de bord.' }); }
 };
@@ -104,4 +107,32 @@ exports.createJob = async (req, res) => {
 exports.applications = async (req, res) => {
   try { if (!isRecruiter(req, res)) return; const company = await getCompany(req.user.userId); if (!company) return res.status(404).json({ error: 'Profil entreprise introuvable.' }); const applications = await prisma.application.findMany({ where: { job: { companyId: company.id } }, include: { job: true, candidate: true }, orderBy: { createdAt: 'desc' } }); res.json(applications.map(applicationDto)); }
   catch { res.status(500).json({ error: 'Impossible de charger les candidatures.' }); }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    if (!isRecruiter(req, res)) return;
+    const company = await getCompany(req.user.userId);
+    if (!company) return res.status(404).json({ error: 'Profil entreprise introuvable.' });
+    const { name, description, website, sector, size, country, city, address, mapsUrl, foundedYear } = req.body;
+    if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: 'Le nom de l’entreprise est obligatoire.' });
+    if (mapsUrl !== undefined && mapsUrl !== '' && !/^https?:\/\/.+/i.test(String(mapsUrl).trim())) return res.status(400).json({ error: 'Le lien Google Maps doit être une URL valide (https://…).' });
+    const updated = await prisma.company.update({
+      where: { id: company.id },
+      data: {
+        name: name !== undefined ? String(name).trim() : company.name,
+        description: description !== undefined ? String(description).trim() || null : company.description,
+        website: website !== undefined ? String(website).trim() || null : company.website,
+        sector: sector !== undefined ? String(sector).trim() || null : company.sector,
+        size: size !== undefined ? String(size).trim() || null : company.size,
+        country: country !== undefined ? String(country).trim() || null : company.country,
+        city: city !== undefined ? String(city).trim() || null : company.city,
+        address: address !== undefined ? String(address).trim() || null : company.address,
+        mapsUrl: mapsUrl !== undefined ? String(mapsUrl).trim() || null : company.mapsUrl,
+        foundedYear: foundedYear !== undefined && foundedYear !== '' ? Number(foundedYear) : company.foundedYear,
+      },
+      include: companyInclude,
+    });
+    res.json(companyDto(updated));
+  } catch { res.status(500).json({ error: 'Impossible de mettre à jour le profil entreprise.' }); }
 };

@@ -16,4 +16,7 @@ router.post('/login/company', authController.loginCompany);
 // Route protégée par token pour la session Next.js
 router.get('/me', authMiddleware, authController.getMe);
 
+// Route de connexion admin
+router.post('/login/admin', authController.loginAdmin);
+
 module.exports = router;
